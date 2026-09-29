@@ -208,7 +208,7 @@ export default class SparkoreKbReader extends Plugin {
     if (slash >= 0) await this.ensureFolder(normalized.slice(0, slash));
 
     const existing = this.app.vault.getAbstractFileByPath(normalized);
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 
     if (existing instanceof TFile) {
       await this.app.vault.modifyBinary(existing, buffer);
