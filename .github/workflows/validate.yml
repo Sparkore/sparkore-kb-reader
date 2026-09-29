@@ -36,7 +36,7 @@ jobs:
           const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
           const versions = JSON.parse(fs.readFileSync("versions.json", "utf8"));
 
-          const semver = /^\\d+\\.\\d+\\.\\d+$/;
+          const semver = /^\d+\.\d+\.\d+$/;
           if (!semver.test(manifest.version)) throw new Error("manifest version must be x.y.z");
           if (manifest.id !== "sparkore-kb-reader") throw new Error("unexpected plugin id");
           if (manifest.isDesktopOnly !== false) throw new Error("plugin must remain mobile-compatible");
