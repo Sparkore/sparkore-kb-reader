@@ -42,6 +42,13 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Create install archive
+        run: |
+          mkdir -p dist/sparkore-kb-reader
+          cp main.js manifest.json dist/sparkore-kb-reader/
+          cd dist
+          zip -r sparkore-kb-reader.zip sparkore-kb-reader
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,5 +56,6 @@ jobs:
           gh release create "${GITHUB_REF_NAME}"
           main.js
           manifest.json
+          dist/sparkore-kb-reader.zip
           --title "Sparkore KB Reader ${GITHUB_REF_NAME}"
           --generate-notes
