@@ -99,7 +99,7 @@ Sparkore KB Reader connects only to GitHub APIs required to read configured repo
 - No Sparkore backend.
 - No ads.
 - No account other than GitHub is required.
-- GitHub credentials are selected through Obsidian SecretStorage.
+- GitHub OAuth access and refresh tokens are stored through Obsidian SecretStorage.
 - Project configuration is stored locally in the Obsidian plugin settings.
 
 ## Development
