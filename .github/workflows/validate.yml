@@ -1,0 +1,56 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Validate manifest
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+          const versions = JSON.parse(fs.readFileSync("versions.json", "utf8"));
+
+          const semver = /^\\d+\\.\\d+\\.\\d+$/;
+          if (!semver.test(manifest.version)) throw new Error("manifest version must be x.y.z");
+          if (manifest.id !== "sparkore-kb-reader") throw new Error("unexpected plugin id");
+          if (manifest.isDesktopOnly !== false) throw new Error("plugin must remain mobile-compatible");
+          if (pkg.version !== manifest.version) throw new Error("package.json version must match manifest.json");
+          if (versions[manifest.version] !== manifest.minAppVersion) throw new Error("versions.json must match manifest version/minAppVersion");
+          if (!fs.existsSync("main.js")) throw new Error("main.js was not produced");
+          NODE
+
+      - name: Upload install bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparkore-kb-reader-${{ github.sha }}
+          path: |
+            manifest.json
+            main.js
+            versions.json
+          if-no-files-found: error
