@@ -2,6 +2,14 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
+## 0.1.6 - Unreleased
+
+### Fixed
+
+- Make mobile folder creation idempotent by checking the vault adapter directly before creating folders.
+- Treat a folder that appears on the adapter after a create error as successfully created, avoiding stale Vault-index races.
+- Skip source metadata folders `.obsidian/**`, `.git/**`, and `.trash/**` so syncing into a vault root cannot collide with the active vault's internal metadata.
+
 ## 0.1.5 - Unreleased
 
 ### Fixed
