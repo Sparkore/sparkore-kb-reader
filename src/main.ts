@@ -530,7 +530,6 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    new Setting(containerEl).setName("Sparkore KB Reader").setHeading();
     containerEl.createEl("p", {
       text: "GitHub is the source. Reader-managed folders are local reading caches and are never pushed back.",
     });
