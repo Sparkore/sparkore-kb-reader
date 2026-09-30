@@ -2,6 +2,15 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
+## 0.1.5 - Unreleased
+
+### Fixed
+
+- Remove the runtime dependency on `TFile.stat`, which could be null immediately after writes on Obsidian Mobile.
+- Keep incremental sync based on GitHub blob SHA plus local file existence.
+- Suggest a likely GitHub folder when a configured KB root does not exist.
+- Improve missing-path errors so mobile users can correct the KB root through Browse.
+
 ## 0.1.4 - Unreleased
 
 ### Fixed
