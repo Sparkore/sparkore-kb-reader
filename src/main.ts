@@ -4,6 +4,7 @@ import {
   Plugin,
   PluginSettingTab,
   Setting,
+  SettingDefinitionItem,
   TFile,
   normalizePath,
   requestUrl,
@@ -34,7 +35,6 @@ interface ProjectSyncState {
 }
 
 interface ReaderSettings {
-  githubAppClientId: string;
   githubLogin: string;
   accessExpiresAt: number;
   refreshExpiresAt: number;
@@ -64,7 +64,6 @@ interface TokenResponse {
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
-  githubAppClientId: "",
   githubLogin: "",
   accessExpiresAt: 0,
   refreshExpiresAt: 0,
@@ -157,7 +156,7 @@ export default class SparkoreKbReader extends Plugin {
   }
 
   getClientId(): string {
-    return BUILT_IN_GITHUB_APP_CLIENT_ID || this.settings.githubAppClientId.trim();
+    return BUILT_IN_GITHUB_APP_CLIENT_ID;
   }
 
   private async oauthPost<T>(body: URLSearchParams): Promise<T> {
@@ -526,196 +525,175 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-
-    containerEl.createEl("p", {
-      text: "GitHub is the source. Reader-managed folders are local reading caches and are never pushed back.",
-    });
-
-    new Setting(containerEl).setName("GitHub").setHeading();
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    const githubItems: SettingDefinitionItem[] = [];
 
     if (this.plugin.settings.githubLogin) {
-      new Setting(containerEl)
-        .setName(`Connected as @${this.plugin.settings.githubLogin}`)
-        .setDesc("Authentication uses the Sparkore GitHub App and is stored in Obsidian SecretStorage.")
-        .addButton((button) => button
-          .setDestructive()
-          .setButtonText("Disconnect")
-          .onClick(async () => {
-            await this.plugin.disconnectGitHub();
-            this.display();
-          }));
+      githubItems.push({
+        name: `Connected as @${this.plugin.settings.githubLogin}`,
+        desc: "Authentication uses the Sparkore GitHub App. OAuth tokens are stored in Obsidian SecretStorage.",
+        render: (setting: Setting) => {
+          setting.addButton((button) => button
+            .setDestructive()
+            .setButtonText("Disconnect")
+            .onClick(async () => {
+              await this.plugin.disconnectGitHub();
+              this.update();
+            }));
+        },
+      });
     } else {
-      new Setting(containerEl)
-        .setName("Connect GitHub")
-        .setDesc("Authorize in your browser using GitHub Device Flow. No personal access token is required.")
-        .addButton((button) => button
-          .setCta()
-          .setButtonText("Connect GitHub")
-          .onClick(async () => {
-            await this.plugin.connectGitHub();
-            this.display();
-          }));
-    }
-
-    if (!BUILT_IN_GITHUB_APP_CLIENT_ID) {
-      new Setting(containerEl)
-        .setName("GitHub App client ID")
-        .setDesc("Temporary internal-build setting. This will be embedded in the published plugin.")
-        .addText((text) => text
-          .setValue(this.plugin.settings.githubAppClientId)
-          .onChange(async (value) => {
-            this.plugin.settings.githubAppClientId = value.trim();
-            await this.plugin.saveSettings();
-          }));
+      githubItems.push({
+        name: "Connect GitHub",
+        desc: "Authorize in your browser using GitHub Device Flow. No personal access token is required.",
+        render: (setting: Setting) => {
+          setting.addButton((button) => button
+            .setCta()
+            .setButtonText("Connect GitHub")
+            .onClick(async () => {
+              await this.plugin.connectGitHub();
+              this.update();
+            }));
+        },
+      });
     }
 
     if (BUILT_IN_GITHUB_APP_INSTALL_URL) {
-      new Setting(containerEl)
-        .setName("Repository access")
-        .setDesc("Install or manage Sparkore KB Reader access for the GitHub repositories you want to read.")
-        .addButton((button) => button
-          .setButtonText("Manage GitHub App")
-          .onClick(() => window.open(BUILT_IN_GITHUB_APP_INSTALL_URL, "_blank")));
+      githubItems.push({
+        name: "Repository access",
+        desc: "Install or manage Sparkore KB Reader access for the GitHub repositories you want to read.",
+        action: () => {
+          window.open(BUILT_IN_GITHUB_APP_INSTALL_URL, "_blank");
+        },
+      });
     }
 
-    new Setting(containerEl)
-      .setName("Refresh on startup")
-      .setDesc("Refresh configured knowledge bases after the workspace is ready.")
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.syncOnStartup)
-        .onChange(async (value) => {
-          this.plugin.settings.syncOnStartup = value;
-          await this.plugin.saveSettings();
-        }));
+    const projectPages: SettingDefinitionItem[] = this.plugin.settings.projects.map((project, index) => ({
+      type: "page",
+      name: project.repository || `Project ${index + 1}`,
+      desc: `${project.branch || "Default branch"} · ${project.kbRoot || "Knowledge Base"}`,
+      items: [
+        {
+          name: "Repository",
+          desc: "GitHub repository in owner/repo format or a GitHub repository URL.",
+          render: (setting: Setting) => {
+            setting.addText((text) => text
+              .setValue(project.repository)
+              .setPlaceholder("owner/repo")
+              .onChange(async (value) => {
+                project.repository = normalizedRepo(value);
+                await this.plugin.saveSettings();
+              }));
+          },
+        },
+        {
+          name: "Branch",
+          desc: "Leave empty to follow the repository default branch.",
+          render: (setting: Setting) => {
+            setting.addText((text) => text
+              .setValue(project.branch)
+              .setPlaceholder("Default branch")
+              .onChange(async (value) => {
+                project.branch = value.trim();
+                await this.plugin.saveSettings();
+              }));
+          },
+        },
+        {
+          name: "KB root",
+          desc: "Repository folder to fetch into the local reading cache.",
+          render: (setting: Setting) => {
+            setting.addText((text) => text
+              .setValue(project.kbRoot)
+              .setPlaceholder("Knowledge Base")
+              .onChange(async (value) => {
+                project.kbRoot = value.trim();
+                await this.plugin.saveSettings();
+              }));
+          },
+        },
+        {
+          name: "Local folder",
+          desc: "Vault folder for the local cache. Leave empty to use Sparkore KB/<repo>.",
+          render: (setting: Setting) => {
+            setting.addText((text) => text
+              .setValue(project.localFolder)
+              .setPlaceholder("Sparkore KB/<repo>")
+              .onChange(async (value) => {
+                project.localFolder = value.trim();
+                await this.plugin.saveSettings();
+              }));
+          },
+        },
+        {
+          name: "Refresh now",
+          desc: "Fetch the selected branch and KB path from GitHub.",
+          action: () => {
+            void this.plugin.syncProject(project);
+          },
+        },
+      ],
+    }));
 
-    new Setting(containerEl)
-      .setName("Remove files deleted upstream")
-      .setDesc("Move Reader-managed files to Obsidian trash when they no longer exist in the selected GitHub path.")
-      .addToggle((toggle) => toggle
-        .setValue(this.plugin.settings.pruneDeleted)
-        .onChange(async (value) => {
-          this.plugin.settings.pruneDeleted = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl).setName("Projects").setHeading();
-
-    this.plugin.settings.projects.forEach((project, index) => {
-      const group = containerEl.createDiv({ cls: "sparkore-kb-reader-project" });
-      new Setting(group).setName(project.repository || `Project ${index + 1}`).setHeading();
-
-      new Setting(group)
-        .setName("Repository")
-        .setDesc("owner/repo or a GitHub repository URL.")
-        .addText((text) => text
-          .setValue(project.repository)
-          .onChange(async (value) => {
-            project.repository = normalizedRepo(value);
-            await this.plugin.saveSettings();
-          }));
-
-      new Setting(group)
-        .setName("Branch")
-        .setDesc("Leave empty to follow the repository default branch.")
-        .addText((text) => text
-          .setValue(project.branch)
-          .onChange(async (value) => {
-            project.branch = value.trim();
-            await this.plugin.saveSettings();
-          }));
-
-      new Setting(group)
-        .setName("KB root")
-        .setDesc("Repository folder to fetch.")
-        .addText((text) => text
-          .setValue(project.kbRoot)
-          .setPlaceholder("Knowledge Base")
-          .onChange(async (value) => {
-            project.kbRoot = value.trim();
-            await this.plugin.saveSettings();
-          }));
-
-      new Setting(group)
-        .setName("Local folder")
-        .setDesc("Vault folder for the local cache. Empty uses Sparkore KB/<repo>.")
-        .addText((text) => text
-          .setValue(project.localFolder)
-          .onChange(async (value) => {
-            project.localFolder = value.trim();
-            await this.plugin.saveSettings();
-          }));
-
-      new Setting(group)
-        .setName("Actions")
-        .setDesc("Changing Local folder does not automatically remove the previous cache folder.")
-        .addButton((button) => button
-          .setButtonText("Refresh")
-          .onClick(async () => this.plugin.syncProject(project)))
-        .addButton((button) => button
-          .setDestructive()
-          .setButtonText("Remove project")
-          .onClick(async () => {
-            await this.plugin.removeProject(index);
-            this.display();
-          }));
-    });
-
-    new Setting(containerEl).setName("Add project").setHeading();
-
-    let repository = "";
-    let branch = "";
-    let kbRoot = "Knowledge Base";
-    let localFolder = "";
-
-    new Setting(containerEl)
-      .setName("Repository")
-      .setDesc("owner/repo or a GitHub repository URL.")
-      .addText((text) => text.onChange((value) => { repository = normalizedRepo(value); }));
-
-    new Setting(containerEl)
-      .setName("Branch")
-      .setDesc("Optional. Empty uses the repository default branch.")
-      .addText((text) => text.onChange((value) => { branch = value.trim(); }));
-
-    new Setting(containerEl)
-      .setName("KB root")
-      .setDesc("Repository folder to fetch.")
-      .addText((text) => text
-        .setValue("Knowledge Base")
-        .onChange((value) => { kbRoot = value.trim(); }));
-
-    new Setting(containerEl)
-      .setName("Local folder")
-      .setDesc("Optional. Empty uses Sparkore KB/<repo>.")
-      .addText((text) => text.onChange((value) => { localFolder = value.trim(); }));
-
-    new Setting(containerEl)
-      .addButton((button) => button
-        .setCta()
-        .setButtonText("Add project")
-        .onClick(async () => {
-          const normalized = normalizedRepo(repository);
-          if (normalized.split("/").length !== 2) {
-            new Notice("Repository must use owner/name format.");
-            return;
-          }
-          if (!kbRoot) {
-            new Notice("KB root cannot be empty.");
-            return;
-          }
-
-          this.plugin.settings.projects.push({
-            id: projectId(),
-            repository: normalized,
-            branch,
-            kbRoot,
-            localFolder,
-          });
-          await this.plugin.saveSettings();
-          this.display();
-        }));
+    return [
+      {
+        type: "group",
+        heading: "GitHub",
+        items: githubItems,
+      },
+      {
+        type: "group",
+        heading: "Sync",
+        items: [
+          {
+            name: "Refresh on startup",
+            desc: "Refresh configured knowledge bases after the workspace is ready.",
+            control: {
+              type: "toggle",
+              key: "syncOnStartup",
+            },
+          },
+          {
+            name: "Remove files deleted upstream",
+            desc: "Move Reader-managed files to Obsidian trash when they no longer exist in the selected GitHub path.",
+            control: {
+              type: "toggle",
+              key: "pruneDeleted",
+            },
+          },
+        ],
+      },
+      {
+        type: "list",
+        heading: "Projects",
+        emptyState: "No knowledge bases configured yet.",
+        items: projectPages,
+        addItem: {
+          name: "Add project",
+          action: () => {
+            this.plugin.settings.projects.push({
+              id: projectId(),
+              repository: "",
+              branch: "",
+              kbRoot: "Knowledge Base",
+              localFolder: "",
+            });
+            void this.plugin.saveSettings().then(() => this.update());
+          },
+        },
+        onReorder: (oldIndex: number, newIndex: number) => {
+          const projects = this.plugin.settings.projects;
+          const [moved] = projects.splice(oldIndex, 1);
+          if (!moved) return;
+          projects.splice(newIndex, 0, moved);
+          void this.plugin.saveSettings();
+          this.update();
+        },
+        onDelete: (index: number) => {
+          void this.plugin.removeProject(index).then(() => this.update());
+        },
+      },
+    ];
   }
 }
+
