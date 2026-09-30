@@ -4,6 +4,13 @@ on:
   push:
     tags:
       - "*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.0"
+        required: true
+        default: "0.1.0"
+        type: string
 
 permissions:
   contents: write
@@ -13,25 +20,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+
+      - name: Resolve version
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            version="$INPUT_VERSION"
+          else
+            version="$REF_NAME"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: npm install --ignore-scripts
 
       - name: Validate release version
         shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           node - <<'NODE'
           const fs = require("fs");
           const manifest = JSON.parse(fs.readFileSync("manifest.json", "utf8"));
           const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
           const versions = JSON.parse(fs.readFileSync("versions.json", "utf8"));
-          const tag = process.env.GITHUB_REF_NAME;
+          const version = process.env.VERSION;
 
-          if (tag !== manifest.version) throw new Error("tag must match manifest version");
+          if (version !== manifest.version) throw new Error(`release version ${version} must match manifest version ${manifest.version}`);
           if (pkg.version !== manifest.version) throw new Error("package.json version must match manifest.json");
           if (versions[manifest.version] !== manifest.minAppVersion) throw new Error("versions.json must match manifest version/minAppVersion");
           NODE
@@ -41,6 +67,21 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Create tag for manual release
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            echo "Tag $VERSION already exists."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag "$VERSION" "${GITHUB_SHA}"
+            git push origin "$VERSION"
+          fi
 
       - name: Create install archive
         run: |
@@ -52,10 +93,17 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "${GITHUB_REF_NAME}"
-          main.js
-          manifest.json
-          dist/sparkore-kb-reader.zip
-          --title "Sparkore KB Reader ${GITHUB_REF_NAME}"
-          --generate-notes
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists; uploading/replacing assets."
+            gh release upload "$VERSION" main.js manifest.json dist/sparkore-kb-reader.zip --clobber
+          else
+            gh release create "$VERSION" \
+              main.js \
+              manifest.json \
+              dist/sparkore-kb-reader.zip \
+              --title "Sparkore KB Reader $VERSION" \
+              --generate-notes
+          fi
