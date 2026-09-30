@@ -2,6 +2,15 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
+## 0.1.7 - Unreleased
+
+### Fixed
+
+- Make current vault root the default destination for all new and legacy automatic project configs.
+- Remove the automatic `Sparkore KB/<repo>` destination option.
+- Treat mobile `Folder already exists` / `EEXIST` creation races as successful folder creation.
+- Retry transient GitHub DNS/network failures and show a clear connectivity error after retries.
+
 ## 0.1.6 - Unreleased
 
 ### Fixed
