@@ -273,7 +273,7 @@ export default class SparkoreKbReader extends Plugin {
 
   async loadSettings(): Promise<void> {
     const saved = await this.loadData() as Partial<ReaderSettings> | null;
-    const projects = (saved?.projects ?? []).map((project) => ({
+    const projects: ReaderProject[] = (saved?.projects ?? []).map((project) => ({
       id: project.id || projectId(),
       repository: project.repository ?? "",
       branch: project.branch ?? "",
@@ -689,7 +689,7 @@ export default class SparkoreKbReader extends Plugin {
     }
   }
 
-  private destinationRoot(project: ReaderProject, projectName: string): string {
+  private destinationRoot(project: ReaderProject): string {
     if (project.destinationMode === "vault-root") return "";
     if (project.destinationMode === "custom" && project.localFolder.trim()) {
       return normalizePath(project.localFolder.trim());
@@ -743,7 +743,7 @@ export default class SparkoreKbReader extends Plugin {
     const branch = await this.resolveBranch({ ...project, repository });
     const kbRoot = project.kbRoot.trim().replace(/^\/+|\/+$/g, "");
     const projectName = repository.split("/").pop() || "Project";
-    const localRoot = this.destinationRoot(project, projectName);
+    const localRoot = this.destinationRoot(project);
 
     const allFiles = await this.listRecursive(repository, branch, kbRoot);
     const files = allFiles.filter((item) => {
