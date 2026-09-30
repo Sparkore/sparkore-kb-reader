@@ -2,7 +2,17 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
-## 0.1.3 - Unreleased
+## 0.1.4 - Unreleased
+
+### Fixed
+
+- Show a visible sync state per project: not synced, syncing, success, or error.
+- Catch per-project sync failures and surface actionable error messages instead of failing silently.
+- Explain missing GitHub KB paths and direct users to the folder browser.
+- Clarify that mobile destinations live inside the currently opened Obsidian vault.
+- Add explicit destination choices for automatic project folder, current vault root, or an existing vault folder.
+
+## 0.1.3 - 2026-09-30
 
 ### Added
 
