@@ -7,7 +7,9 @@ All notable changes to Sparkore KB Reader are documented here.
 ### Fixed
 
 - Remove the redundant plugin-name heading from the settings page.
-- Raise the minimum supported Obsidian version to 1.13.0 to match the current destructive-button API.
+- Raise the minimum supported Obsidian version to 1.13.0 to match the current APIs.
+- Migrate the settings UI to Obsidian's declarative settings API so settings are searchable and no deprecated `display()` override remains.
+- Adopt the MIT license so the repository license is recognized by GitHub and Obsidian review.
 
 ## 0.1.1 - 2026-09-30
 
