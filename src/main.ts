@@ -5,6 +5,7 @@ import {
   PluginSettingTab,
   Setting,
   SettingDefinitionItem,
+  SettingGroupItem,
   TFile,
   normalizePath,
   requestUrl,
@@ -526,7 +527,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
   }
 
   getSettingDefinitions(): SettingDefinitionItem[] {
-    const githubItems: SettingDefinitionItem[] = [];
+    const githubItems: SettingGroupItem[] = [];
 
     if (this.plugin.settings.githubLogin) {
       githubItems.push({
@@ -568,7 +569,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
       });
     }
 
-    const projectPages: SettingDefinitionItem[] = this.plugin.settings.projects.map((project, index) => ({
+    const projectPages: SettingGroupItem[] = this.plugin.settings.projects.map((project, index) => ({
       type: "page",
       name: project.repository || `Project ${index + 1}`,
       desc: `${project.branch || "Default branch"} · ${project.kbRoot || "Knowledge Base"}`,
