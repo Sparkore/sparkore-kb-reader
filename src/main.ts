@@ -742,7 +742,6 @@ export default class SparkoreKbReader extends Plugin {
     const repository = normalizedRepo(project.repository);
     const branch = await this.resolveBranch({ ...project, repository });
     const kbRoot = project.kbRoot.trim().replace(/^\/+|\/+$/g, "");
-    const projectName = repository.split("/").pop() || "Project";
     const localRoot = this.destinationRoot(project);
 
     const allFiles = await this.listRecursive(repository, branch, kbRoot);
