@@ -610,13 +610,13 @@ export default class SparkoreKbReader extends Plugin {
     return normalizePath(`Sparkore KB/${projectName}`);
   }
 
-  private destinationLabel(project: ReaderProject): string {
+  destinationLabel(project: ReaderProject): string {
     if (project.destinationMode === "vault-root") return "Current vault root";
     if (project.destinationMode === "custom" && project.localFolder.trim()) return project.localFolder.trim();
     return "Automatic: Sparkore KB/<repo>";
   }
 
-  private syncStatusText(project: ReaderProject): string {
+  syncStatusText(project: ReaderProject): string {
     if (project.lastSyncStatus === "syncing") return "Syncing from GitHub…";
     if (project.lastSyncStatus === "success") {
       const when = project.lastSyncedAt ? new Date(project.lastSyncedAt).toLocaleString() : "recently";
