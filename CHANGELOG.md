@@ -6,6 +6,7 @@ All notable changes to Sparkore KB Reader are documented here.
 
 ### Added
 
+- GitHub App OAuth Device Flow with automatic access-token refresh for mobile sign-in.
 - Mobile-compatible Obsidian plugin foundation.
 - Read-only GitHub Knowledge Base fetching.
 - Multiple project configurations per vault.
