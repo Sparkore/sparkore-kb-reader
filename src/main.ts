@@ -127,6 +127,18 @@ function editDistance(a: string, b: string): number {
   return matrix[a.length][b.length];
 }
 
+function shouldSkipRemoteRelativePath(relative: string): boolean {
+  const normalized = relative.replace(/\\/g, "/").replace(/^\/+/, "");
+  return (
+    normalized === ".obsidian" ||
+    normalized.startsWith(".obsidian/") ||
+    normalized === ".git" ||
+    normalized.startsWith(".git/") ||
+    normalized === ".trash" ||
+    normalized.startsWith(".trash/")
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -601,12 +613,22 @@ export default class SparkoreKbReader extends Plugin {
     const normalized = normalizePath(folder);
     if (!normalized) return;
 
-    const parts = normalized.split("/");
+    const parts = normalized.split("/").filter(Boolean);
     let current = "";
     for (const part of parts) {
       current = current ? `${current}/${part}` : part;
-      if (!this.app.vault.getAbstractFileByPath(current)) {
+
+      if (await this.app.vault.adapter.exists(current)) {
+        continue;
+      }
+
+      try {
         await this.app.vault.createFolder(current);
+      } catch (error) {
+        if (await this.app.vault.adapter.exists(current)) {
+          continue;
+        }
+        throw error;
       }
     }
   }
@@ -704,7 +726,13 @@ export default class SparkoreKbReader extends Plugin {
     const projectName = repository.split("/").pop() || "Project";
     const localRoot = this.destinationRoot(project, projectName);
 
-    const files = await this.listRecursive(repository, branch, kbRoot);
+    const allFiles = await this.listRecursive(repository, branch, kbRoot);
+    const files = allFiles.filter((item) => {
+      const relative = item.path.startsWith(`${kbRoot}/`)
+        ? item.path.slice(kbRoot.length + 1)
+        : item.name;
+      return !shouldSkipRemoteRelativePath(relative);
+    });
     const state = this.settings.syncState[project.id] ?? { files: {} };
     const nextFiles: Record<string, SyncedFileState> = {};
     let downloaded = 0;
@@ -945,7 +973,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
         },
         {
           name: "Vault destination",
-          desc: "KB Reader writes inside the currently opened Obsidian vault on mobile. Choose the vault root, an automatic project folder, or an existing folder in this vault.",
+          desc: "KB Reader writes inside the currently opened Obsidian vault on mobile. Source metadata folders such as .obsidian, .git, and .trash are never copied. Choose the vault root, an automatic project folder, or an existing folder in this vault.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(this.plugin.destinationLabel(project))
