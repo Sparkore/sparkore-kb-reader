@@ -17,15 +17,18 @@ Before submission:
 1. Embed the production GitHub App Client ID and install URL.
 2. Confirm CI is green.
 3. Ensure `manifest.json`, `package.json`, and `versions.json` agree on version `0.1.0`.
-4. Create Git tag `0.1.0`.
+4. Open **GitHub Actions → Release → Run workflow**, enter `0.1.0`, and run it.
 
 The release workflow automatically:
 
+- validates that the requested version matches `manifest.json`;
 - typechecks;
 - builds `main.js`;
-- validates the release version;
+- creates Git tag `0.1.0` when needed;
 - creates `sparkore-kb-reader.zip`;
-- creates the GitHub Release with `main.js` and `manifest.json`.
+- creates the GitHub Release with `main.js`, `manifest.json`, and the install ZIP.
+
+A normal pushed semver tag also triggers the same release workflow.
 
 ## Community directory submission
 
