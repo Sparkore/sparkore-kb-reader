@@ -13,5 +13,8 @@
     "esbuild": "^0.25.0",
     "obsidian": "^1.11.4",
     "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
