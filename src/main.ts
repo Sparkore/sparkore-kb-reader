@@ -35,7 +35,6 @@ interface ReaderProject {
 
 interface SyncedFileState {
   sha: string;
-  mtime: number;
 }
 
 interface ProjectSyncState {
@@ -102,6 +101,30 @@ function projectId(): string {
 
 function normalizedRepo(value: string): string {
   return value.trim().replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "").replace(/^\/+|\/+$/g, "");
+}
+
+
+function normalizedPathKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const matrix = Array.from({ length: rows }, () => Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) matrix[i][0] = i;
+  for (let j = 0; j < cols; j += 1) matrix[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost,
+      );
+    }
+  }
+  return matrix[a.length][b.length];
 }
 
 function sleep(ms: number): Promise<void> {
@@ -525,6 +548,26 @@ export default class SparkoreKbReader extends Plugin {
     return bytes;
   }
 
+  private async suggestKbRoot(repository: string, branch: string, requested: string): Promise<string | null> {
+    try {
+      const roots = await this.listRemoteFolders(repository, branch, "");
+      if (roots.length === 0) return null;
+      const target = normalizedPathKey(requested);
+      const ranked = roots
+        .map((folder) => ({
+          path: folder.path,
+          score: editDistance(target, normalizedPathKey(folder.path)),
+        }))
+        .sort((a, b) => a.score - b.score);
+      const best = ranked[0];
+      if (!best) return null;
+      const threshold = Math.max(2, Math.floor(target.length * 0.35));
+      return best.score <= threshold ? best.path : null;
+    } catch {
+      return null;
+    }
+  }
+
   private async listRecursive(
     repository: string,
     branch: string,
@@ -536,7 +579,9 @@ export default class SparkoreKbReader extends Plugin {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes("(404)")) {
-        throw new Error(`KB path "${path}" was not found on ${repository}@${branch}. Use Browse to select an existing folder.`);
+        const suggestion = await this.suggestKbRoot(repository, branch, path);
+        const hint = suggestion ? ` Did you mean "${suggestion}"?` : "";
+        throw new Error(`KB path "${path}" was not found on ${repository}@${branch}.${hint} Use Browse to select an existing folder.`);
       }
       throw error;
     }
@@ -566,7 +611,7 @@ export default class SparkoreKbReader extends Plugin {
     }
   }
 
-  private async writeBinary(path: string, bytes: Uint8Array): Promise<TFile> {
+  private async writeBinary(path: string, bytes: Uint8Array): Promise<void> {
     const normalized = normalizePath(path);
     const slash = normalized.lastIndexOf("/");
     if (slash >= 0) await this.ensureFolder(normalized.slice(0, slash));
@@ -576,10 +621,11 @@ export default class SparkoreKbReader extends Plugin {
 
     if (existing instanceof TFile) {
       await this.app.vault.modifyBinary(existing, buffer);
-      return existing;
+      return;
     }
     if (!existing) {
-      return await this.app.vault.createBinary(normalized, buffer);
+      await this.app.vault.createBinary(normalized, buffer);
+      return;
     }
     throw new Error(`Cannot replace non-file path: ${normalized}`);
   }
@@ -598,7 +644,7 @@ export default class SparkoreKbReader extends Plugin {
       throw new Error("Repository must use owner/name format.");
     }
     if (!project.kbRoot.trim()) {
-      throw new Error("KB root cannot be empty.");
+      throw new Error("KB root is not selected. Use Browse to choose the knowledge-base folder.");
     }
   }
 
@@ -672,19 +718,15 @@ export default class SparkoreKbReader extends Plugin {
       const local = this.app.vault.getAbstractFileByPath(localPath);
       const previous = state.files[relative];
 
-      if (
-        local instanceof TFile &&
-        previous?.sha === item.sha &&
-        previous.mtime === local.stat.mtime
-      ) {
+      if (local instanceof TFile && previous?.sha === item.sha) {
         nextFiles[relative] = previous;
         unchanged += 1;
         continue;
       }
 
       const bytes = await this.fetchFile(item);
-      const written = await this.writeBinary(localPath, bytes);
-      nextFiles[relative] = { sha: item.sha, mtime: written.stat.mtime };
+      await this.writeBinary(localPath, bytes);
+      nextFiles[relative] = { sha: item.sha };
       downloaded += 1;
     }
 
