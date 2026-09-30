@@ -65,9 +65,10 @@ Recommended setup for mobile:
 
 Per-project destinations can be:
 
-- **Automatic** — `Sparkore KB/<repo>`
-- **Current vault root**
+- **Current vault root** — default
 - **Existing folder inside the current vault**
+
+If you keep one KB per dedicated Reader vault, use **Current vault root**.
 
 This avoids mixing a downloaded KB into another project's working vault.
 
