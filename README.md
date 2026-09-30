@@ -36,7 +36,7 @@ Repository, branch, KB root, and local folder are configured per project in Obsi
 - Supports multiple projects in one Obsidian vault.
 - Branch is configurable per project; an empty branch uses the repository default.
 - Local destination folder is configurable per project.
-- Uses upstream GitHub SHA plus local file metadata to avoid unnecessary downloads and restore reader-managed files after local edits.
+- Uses upstream GitHub blob SHA plus local file existence to avoid unnecessary downloads.
 - Optionally removes local cache files that were deleted upstream.
 - Manual refresh per project or for all projects.
 - Optional refresh on Obsidian startup.
@@ -106,7 +106,7 @@ Then use **Refresh** or the command **Refresh all knowledge bases**.
 
 GitHub is the source for Reader-managed folders. The local Obsidian copy is a disposable reading cache.
 
-Local edits are not pushed. A refresh may restore a Reader-managed file from GitHub.
+Local edits are never pushed. Reader-managed folders should be treated as read-only caches; upstream changes replace the corresponding cached files.
 
 Use the project's normal Git branch and review workflow for durable KB changes.
 
