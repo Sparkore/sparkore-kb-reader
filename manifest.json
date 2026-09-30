@@ -1,8 +1,8 @@
 {
   "id": "sparkore-kb-reader",
   "name": "Sparkore KB Reader",
-  "version": "0.1.1",
-  "minAppVersion": "1.11.4",
+  "version": "0.1.2",
+  "minAppVersion": "1.13.0",
   "description": "Read selected GitHub knowledge base folders in a mobile-friendly local cache.",
   "author": "Sparkore",
   "isDesktopOnly": false
