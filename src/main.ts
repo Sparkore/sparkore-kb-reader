@@ -9,8 +9,8 @@ import {
   requestUrl,
 } from "obsidian";
 
-const BUILT_IN_GITHUB_APP_CLIENT_ID = "";
-const BUILT_IN_GITHUB_APP_INSTALL_URL = "";
+const BUILT_IN_GITHUB_APP_CLIENT_ID = "Iv23lirlrKVZLobrsmYi";
+const BUILT_IN_GITHUB_APP_INSTALL_URL = "https://github.com/apps/sparkore-kb-reader/installations/new";
 const ACCESS_TOKEN_SECRET = "sparkore-kb-reader-access-token";
 const REFRESH_TOKEN_SECRET = "sparkore-kb-reader-refresh-token";
 
