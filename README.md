@@ -158,4 +158,4 @@ Early internal release. Validate with a test vault before using it with an impor
 
 ## License
 
-Copyright © 2026 Sparkore. All rights reserved.
+MIT License — Copyright © 2026 Sparkore.
