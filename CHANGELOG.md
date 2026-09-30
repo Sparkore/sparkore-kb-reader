@@ -2,7 +2,18 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
-## 0.1.0 - Unreleased
+## 0.1.1 - Unreleased
+
+### Fixed
+
+- Use Obsidian `Setting.setHeading()` instead of raw heading elements in plugin settings.
+- Replace deprecated destructive-button styling API.
+- Add a reproducible npm lockfile and use `npm ci` in CI/release builds.
+- Remove the deprecated `builtin-modules` dependency.
+- Publish only the release assets Obsidian consumes.
+- Generate GitHub artifact provenance for `main.js`.
+
+## 0.1.0 - 2026-09-30
 
 ### Added
 
