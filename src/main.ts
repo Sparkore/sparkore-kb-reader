@@ -18,7 +18,7 @@ const BUILT_IN_GITHUB_APP_INSTALL_URL = "https://github.com/apps/sparkore-kb-rea
 const ACCESS_TOKEN_SECRET = "sparkore-kb-reader-access-token";
 const REFRESH_TOKEN_SECRET = "sparkore-kb-reader-refresh-token";
 
-type DestinationMode = "automatic" | "vault-root" | "custom";
+type DestinationMode = "vault-root" | "custom";
 type SyncStatus = "never" | "syncing" | "success" | "error";
 
 interface ReaderProject {
@@ -278,7 +278,7 @@ export default class SparkoreKbReader extends Plugin {
       repository: project.repository ?? "",
       branch: project.branch ?? "",
       kbRoot: project.kbRoot ?? "",
-      destinationMode: project.destinationMode ?? (project.localFolder ? "custom" : "automatic"),
+      destinationMode: project.destinationMode === "custom" && project.localFolder ? "custom" : "vault-root",
       localFolder: project.localFolder ?? "",
       lastSyncStatus: project.lastSyncStatus ?? "never",
       lastSyncMessage: project.lastSyncMessage ?? "",
@@ -466,22 +466,39 @@ export default class SparkoreKbReader extends Plugin {
     };
     if (resolvedToken) headers.Authorization = `Bearer ${resolvedToken}`;
 
-    const response = await requestUrl({
-      url,
-      method: "GET",
-      headers,
-      throw: false,
-    });
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        const response = await requestUrl({
+          url,
+          method: "GET",
+          headers,
+          throw: false,
+        });
 
-    if (response.status < 200 || response.status >= 300) {
-      const hint = response.status === 404 && !resolvedToken
-        ? " Connect GitHub for private repositories."
-        : response.status === 404
-          ? " Check that the Sparkore GitHub App is installed for this repository and that the branch/path exists."
-          : "";
-      throw new Error(`GitHub request failed (${response.status}).${hint}`);
+        if (response.status < 200 || response.status >= 300) {
+          const hint = response.status === 404 && !resolvedToken
+            ? " Connect GitHub for private repositories."
+            : response.status === 404
+              ? " Check that the Sparkore GitHub App is installed for this repository and that the branch/path exists."
+              : "";
+          throw new Error(`GitHub request failed (${response.status}).${hint}`);
+        }
+        return response.json as T;
+      } catch (error) {
+        lastError = error;
+        const message = error instanceof Error ? error.message : String(error);
+        const transient = /unknownhostexception|unable to resolve host|no address associated with hostname|network|timed? ?out|connection reset/i.test(message);
+        if (!transient || attempt === 3) {
+          if (transient) {
+            throw new Error("Cannot reach api.github.com. Check internet connection, VPN or Private DNS, then try again.");
+          }
+          throw error;
+        }
+        await sleep(500 * attempt);
+      }
     }
-    return response.json as T;
+    throw lastError;
   }
 
   private apiPath(repository: string, path: string, branch: string): string {
@@ -625,7 +642,9 @@ export default class SparkoreKbReader extends Plugin {
       try {
         await this.app.vault.createFolder(current);
       } catch (error) {
-        if (await this.app.vault.adapter.exists(current)) {
+        const message = error instanceof Error ? error.message : String(error);
+        const alreadyExists = /already exists|eexist/i.test(message);
+        if (alreadyExists || await this.app.vault.adapter.exists(current)) {
           continue;
         }
         throw error;
@@ -675,13 +694,13 @@ export default class SparkoreKbReader extends Plugin {
     if (project.destinationMode === "custom" && project.localFolder.trim()) {
       return normalizePath(project.localFolder.trim());
     }
-    return normalizePath(`Sparkore KB/${projectName}`);
+    return "";
   }
 
   destinationLabel(project: ReaderProject): string {
     if (project.destinationMode === "vault-root") return "Current vault root";
     if (project.destinationMode === "custom" && project.localFolder.trim()) return project.localFolder.trim();
-    return "Automatic: Sparkore KB/<repo>";
+    return "Current vault root";
   }
 
   syncStatusText(project: ReaderProject): string {
@@ -973,7 +992,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
         },
         {
           name: "Vault destination",
-          desc: "KB Reader writes inside the currently opened Obsidian vault on mobile. Source metadata folders such as .obsidian, .git, and .trash are never copied. Choose the vault root, an automatic project folder, or an existing folder in this vault.",
+          desc: "KB Reader writes inside the currently opened Obsidian vault on mobile. Source metadata folders such as .obsidian, .git, and .trash are never copied. The default is the current vault root; you may optionally choose an existing folder inside this vault.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(this.plugin.destinationLabel(project))
@@ -981,18 +1000,14 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
             setting.addButton((button) => button
               .setButtonText("Choose")
               .onClick(() => {
-                const automatic = "Automatic: Sparkore KB/<repo>";
                 const vaultRoot = "Current vault root";
                 const folders = this.app.vault
                   .getAllFolders(true)
                   .map((folder) => folder.path)
                   .filter((path) => path && path !== "/")
                   .sort((a, b) => a.localeCompare(b));
-                new StringPickerModal(this.app, [automatic, vaultRoot, ...folders], "Choose destination inside this vault", (folder) => {
-                  if (folder === automatic) {
-                    project.destinationMode = "automatic";
-                    project.localFolder = "";
-                  } else if (folder === vaultRoot) {
+                new StringPickerModal(this.app, [vaultRoot, ...folders], "Choose destination inside this vault", (folder) => {
+                  if (folder === vaultRoot) {
                     project.destinationMode = "vault-root";
                     project.localFolder = "";
                   } else {
@@ -1049,7 +1064,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
               repository: "",
               branch: "",
               kbRoot: "",
-              destinationMode: "automatic",
+              destinationMode: "vault-root",
               localFolder: "",
               lastSyncStatus: "never",
               lastSyncMessage: "",
