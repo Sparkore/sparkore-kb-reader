@@ -28,19 +28,13 @@ The app does not need a client secret for Device Flow.
 
 ## After registration
 
-Record:
+Configured production values:
 
-1. the GitHub App **Client ID**;
-2. the app slug / public app URL.
+- Client ID: `Iv23lirlrKVZLobrsmYi`
+- App URL: `https://github.com/apps/sparkore-kb-reader`
+- Install URL: `https://github.com/apps/sparkore-kb-reader/installations/new`
 
-Embed them in:
-
-```ts
-const BUILT_IN_GITHUB_APP_CLIENT_ID = "...";
-const BUILT_IN_GITHUB_APP_INSTALL_URL = "https://github.com/apps/<app-slug>/installations/new";
-```
-
-in `src/main.ts`, then rebuild and validate.
+These values are embedded in `src/main.ts`. No client secret is shipped in the plugin.
 
 ## Repository installation
 
