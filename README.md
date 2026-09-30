@@ -52,6 +52,25 @@ The plugin is designed for Obsidian Mobile. It uses Obsidian APIs and Web APIs o
 
 It does not use Node.js, Electron, a Git executable, or direct filesystem APIs.
 
+## Mobile storage model
+
+On Obsidian Mobile, Sparkore KB Reader writes through Obsidian's active Vault API. It does not write to an arbitrary device folder outside the currently opened vault.
+
+Recommended setup for mobile:
+
+1. Create a dedicated Obsidian vault such as **Sparkore KB Reader** in the device folder you want to use.
+2. Install/enable Sparkore KB Reader in that vault.
+3. Add one or more GitHub knowledge bases.
+4. Keep each project on **Automatic** destination unless you intentionally want to sync a KB into the current vault root.
+
+Per-project destinations can be:
+
+- **Automatic** — `Sparkore KB/<repo>`
+- **Current vault root**
+- **Existing folder inside the current vault**
+
+This avoids mixing a downloaded KB into another project's working vault.
+
 ## Setup
 
 ### 1. Create a GitHub token
