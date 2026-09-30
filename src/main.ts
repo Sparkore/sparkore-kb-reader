@@ -18,12 +18,19 @@ const BUILT_IN_GITHUB_APP_INSTALL_URL = "https://github.com/apps/sparkore-kb-rea
 const ACCESS_TOKEN_SECRET = "sparkore-kb-reader-access-token";
 const REFRESH_TOKEN_SECRET = "sparkore-kb-reader-refresh-token";
 
+type DestinationMode = "automatic" | "vault-root" | "custom";
+type SyncStatus = "never" | "syncing" | "success" | "error";
+
 interface ReaderProject {
   id: string;
   repository: string;
   branch: string;
   kbRoot: string;
+  destinationMode: DestinationMode;
   localFolder: string;
+  lastSyncStatus: SyncStatus;
+  lastSyncMessage: string;
+  lastSyncedAt: string;
 }
 
 interface SyncedFileState {
@@ -235,8 +242,12 @@ export default class SparkoreKbReader extends Plugin {
       id: project.id || projectId(),
       repository: project.repository ?? "",
       branch: project.branch ?? "",
-      kbRoot: project.kbRoot || "Knowledge Base",
+      kbRoot: project.kbRoot ?? "",
+      destinationMode: project.destinationMode ?? (project.localFolder ? "custom" : "automatic"),
       localFolder: project.localFolder ?? "",
+      lastSyncStatus: project.lastSyncStatus ?? "never",
+      lastSyncMessage: project.lastSyncMessage ?? "",
+      lastSyncedAt: project.lastSyncedAt ?? "",
     }));
 
     this.settings = {
@@ -519,7 +530,16 @@ export default class SparkoreKbReader extends Plugin {
     branch: string,
     path: string,
   ): Promise<GitHubContentItem[]> {
-    const items = await this.github<GitHubContentItem[]>(this.apiPath(repository, path, branch));
+    let items: GitHubContentItem[];
+    try {
+      items = await this.github<GitHubContentItem[]>(this.apiPath(repository, path, branch));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("(404)")) {
+        throw new Error(`KB path "${path}" was not found on ${repository}@${branch}. Use Browse to select an existing folder.`);
+      }
+      throw error;
+    }
     const result: GitHubContentItem[] = [];
 
     for (const item of items) {
@@ -582,14 +602,61 @@ export default class SparkoreKbReader extends Plugin {
     }
   }
 
-  async syncProject(project: ReaderProject): Promise<void> {
+  private destinationRoot(project: ReaderProject, projectName: string): string {
+    if (project.destinationMode === "vault-root") return "";
+    if (project.destinationMode === "custom" && project.localFolder.trim()) {
+      return normalizePath(project.localFolder.trim());
+    }
+    return normalizePath(`Sparkore KB/${projectName}`);
+  }
+
+  private destinationLabel(project: ReaderProject): string {
+    if (project.destinationMode === "vault-root") return "Current vault root";
+    if (project.destinationMode === "custom" && project.localFolder.trim()) return project.localFolder.trim();
+    return "Automatic: Sparkore KB/<repo>";
+  }
+
+  private syncStatusText(project: ReaderProject): string {
+    if (project.lastSyncStatus === "syncing") return "Syncing from GitHub…";
+    if (project.lastSyncStatus === "success") {
+      const when = project.lastSyncedAt ? new Date(project.lastSyncedAt).toLocaleString() : "recently";
+      return `Last sync succeeded ${when}. ${project.lastSyncMessage}`;
+    }
+    if (project.lastSyncStatus === "error") return `Last sync failed: ${project.lastSyncMessage}`;
+    return "Not synced yet.";
+  }
+
+  async syncProjectWithFeedback(project: ReaderProject): Promise<void> {
+    const projectName = normalizedRepo(project.repository).split("/").pop() || "project";
+    project.lastSyncStatus = "syncing";
+    project.lastSyncMessage = "";
+    await this.saveSettings();
+    new Notice(`Sparkore KB Reader: syncing ${projectName}…`);
+
+    try {
+      const result = await this.syncProject(project);
+      project.lastSyncStatus = "success";
+      project.lastSyncedAt = new Date().toISOString();
+      project.lastSyncMessage = `${result.updated} updated · ${result.unchanged} unchanged · ${result.removed} removed`;
+      await this.saveSettings();
+      new Notice(`Sparkore KB Reader: ${projectName} synced successfully.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      project.lastSyncStatus = "error";
+      project.lastSyncMessage = message;
+      await this.saveSettings();
+      new Notice(`Sparkore KB Reader: ${message}`, 12000);
+    }
+  }
+
+  async syncProject(project: ReaderProject): Promise<{ updated: number; unchanged: number; removed: number }> {
     this.validateProject(project);
 
     const repository = normalizedRepo(project.repository);
     const branch = await this.resolveBranch({ ...project, repository });
     const kbRoot = project.kbRoot.trim().replace(/^\/+|\/+$/g, "");
     const projectName = repository.split("/").pop() || "Project";
-    const localRoot = normalizePath(project.localFolder.trim() || `Sparkore KB/${projectName}`);
+    const localRoot = this.destinationRoot(project, projectName);
 
     const files = await this.listRecursive(repository, branch, kbRoot);
     const state = this.settings.syncState[project.id] ?? { files: {} };
@@ -601,7 +668,7 @@ export default class SparkoreKbReader extends Plugin {
       const relative = item.path.startsWith(`${kbRoot}/`)
         ? item.path.slice(kbRoot.length + 1)
         : item.name;
-      const localPath = normalizePath(`${localRoot}/${relative}`);
+      const localPath = normalizePath(localRoot ? `${localRoot}/${relative}` : relative);
       const local = this.app.vault.getAbstractFileByPath(localPath);
       const previous = state.files[relative];
 
@@ -625,7 +692,7 @@ export default class SparkoreKbReader extends Plugin {
     if (this.settings.pruneDeleted) {
       for (const oldRelative of Object.keys(state.files)) {
         if (nextFiles[oldRelative]) continue;
-        const oldPath = normalizePath(`${localRoot}/${oldRelative}`);
+        const oldPath = normalizePath(localRoot ? `${localRoot}/${oldRelative}` : oldRelative);
         const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
         if (oldFile instanceof TFile) {
           await this.app.fileManager.trashFile(oldFile);
@@ -641,9 +708,7 @@ export default class SparkoreKbReader extends Plugin {
     };
     await this.saveSettings();
 
-    new Notice(
-      `Sparkore KB Reader: ${projectName} refreshed · ${downloaded} updated · ${unchanged} unchanged · ${removed} removed.`
-    );
+    return { updated: downloaded, unchanged, removed };
   }
 
   async syncAll(): Promise<void> {
@@ -653,12 +718,7 @@ export default class SparkoreKbReader extends Plugin {
     }
 
     for (const project of this.settings.projects) {
-      try {
-        await this.syncProject(project);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        new Notice(`Sparkore KB Reader: ${project.repository} failed — ${message}`, 10000);
-      }
+      await this.syncProjectWithFeedback(project);
     }
   }
 
@@ -725,8 +785,22 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
     const projectPages: SettingGroupItem[] = this.plugin.settings.projects.map((project, index) => ({
       type: "page",
       name: project.repository || `Project ${index + 1}`,
-      desc: `${project.branch || "Default branch"} · ${project.kbRoot || "Knowledge Base"}`,
+      desc: `${project.branch || "Default branch"} · ${project.kbRoot || "Choose KB root"}`,
       items: [
+        {
+          name: "Sync status",
+          desc: this.plugin.syncStatusText(project),
+          render: (setting: Setting) => {
+            setting.addButton((button) => button
+              .setCta()
+              .setButtonText(project.lastSyncStatus === "syncing" ? "Syncing…" : "Sync now")
+              .setDisabled(project.lastSyncStatus === "syncing")
+              .onClick(async () => {
+                await this.plugin.syncProjectWithFeedback(project);
+                this.update();
+              }));
+          },
+        },
         {
           name: "Repository",
           desc: "Choose from repositories available to the connected GitHub App. Manual entry remains available as a fallback.",
@@ -750,7 +824,10 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
                   new StringPickerModal(this.app, repositories, "Choose a GitHub repository", (repository) => {
                     project.repository = repository;
                     project.branch = "";
-                    project.kbRoot = "Knowledge Base";
+                    project.kbRoot = "";
+                    project.lastSyncStatus = "never";
+                    project.lastSyncMessage = "";
+                    project.lastSyncedAt = "";
                     void this.plugin.saveSettings().then(() => this.update());
                   }).open();
                 } catch (error) {
@@ -794,9 +871,10 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(project.kbRoot)
-              .setPlaceholder("Knowledge Base")
+              .setPlaceholder("Choose or browse a folder")
               .onChange(async (value) => {
                 project.kbRoot = value.trim();
+                project.lastSyncStatus = "never";
                 await this.plugin.saveSettings();
               }));
             setting.addButton((button) => button
@@ -812,6 +890,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
                     branch,
                     (path) => {
                       project.kbRoot = path;
+                      project.lastSyncStatus = "never";
                       void this.plugin.saveSettings().then(() => this.update());
                     },
                   ).open();
@@ -823,37 +902,37 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
           },
         },
         {
-          name: "Local folder",
-          desc: "Choose an existing vault folder, use the automatic folder, or enter a path manually.",
+          name: "Vault destination",
+          desc: "KB Reader writes inside the currently opened Obsidian vault on mobile. Choose the vault root, an automatic project folder, or an existing folder in this vault.",
           render: (setting: Setting) => {
             setting.addText((text) => text
-              .setValue(project.localFolder)
-              .setPlaceholder("Sparkore KB/<repo>")
-              .onChange(async (value) => {
-                project.localFolder = value.trim();
-                await this.plugin.saveSettings();
-              }));
+              .setValue(this.plugin.destinationLabel(project))
+              .setDisabled(true));
             setting.addButton((button) => button
               .setButtonText("Choose")
               .onClick(() => {
-                const automatic = "(Automatic: Sparkore KB/<repo>)";
+                const automatic = "Automatic: Sparkore KB/<repo>";
+                const vaultRoot = "Current vault root";
                 const folders = this.app.vault
                   .getAllFolders(true)
                   .map((folder) => folder.path)
                   .filter((path) => path && path !== "/")
                   .sort((a, b) => a.localeCompare(b));
-                new StringPickerModal(this.app, [automatic, ...folders], "Choose a local vault folder", (folder) => {
-                  project.localFolder = folder === automatic ? "" : folder;
+                new StringPickerModal(this.app, [automatic, vaultRoot, ...folders], "Choose destination inside this vault", (folder) => {
+                  if (folder === automatic) {
+                    project.destinationMode = "automatic";
+                    project.localFolder = "";
+                  } else if (folder === vaultRoot) {
+                    project.destinationMode = "vault-root";
+                    project.localFolder = "";
+                  } else {
+                    project.destinationMode = "custom";
+                    project.localFolder = folder;
+                  }
+                  project.lastSyncStatus = "never";
                   void this.plugin.saveSettings().then(() => this.update());
                 }).open();
               }));
-          },
-        },
-        {
-          name: "Refresh now",
-          desc: "Fetch the selected branch and KB path from GitHub.",
-          action: () => {
-            void this.plugin.syncProject(project);
           },
         },
       ],
@@ -899,8 +978,12 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
               id: projectId(),
               repository: "",
               branch: "",
-              kbRoot: "Knowledge Base",
+              kbRoot: "",
+              destinationMode: "automatic",
               localFolder: "",
+              lastSyncStatus: "never",
+              lastSyncMessage: "",
+              lastSyncedAt: "",
             });
             void this.plugin.saveSettings().then(() => this.update());
           },
