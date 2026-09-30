@@ -1,5 +1,7 @@
 import {
   App,
+  FuzzySuggestModal,
+  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -97,6 +99,103 @@ function normalizedRepo(value: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+
+class StringPickerModal extends FuzzySuggestModal<string> {
+  private readonly items: string[];
+  private readonly choose: (item: string) => void;
+
+  constructor(app: App, items: string[], placeholder: string, choose: (item: string) => void) {
+    super(app);
+    this.items = items;
+    this.choose = choose;
+    this.setPlaceholder(placeholder);
+  }
+
+  getItems(): string[] {
+    return this.items;
+  }
+
+  getItemText(item: string): string {
+    return item;
+  }
+
+  onChooseItem(item: string): void {
+    this.choose(item);
+  }
+}
+
+class RemoteFolderBrowserModal extends Modal {
+  private currentPath = "";
+
+  constructor(
+    app: App,
+    private readonly plugin: SparkoreKbReader,
+    private readonly repository: string,
+    private readonly branch: string,
+    private readonly choose: (path: string) => void,
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    void this.render();
+  }
+
+  private async render(): Promise<void> {
+    this.contentEl.empty();
+    this.setTitle("Choose KB root");
+
+    new Setting(this.contentEl)
+      .setName(this.currentPath || "Repository root")
+      .setDesc(this.currentPath ? "Current GitHub folder" : "Browse folders in the selected repository.")
+      .addButton((button) => button
+        .setButtonText("Use folder")
+        .setDisabled(!this.currentPath)
+        .onClick(() => {
+          if (!this.currentPath) return;
+          this.choose(this.currentPath);
+          this.close();
+        }));
+
+    if (this.currentPath) {
+      new Setting(this.contentEl)
+        .setName("..")
+        .setDesc("Go to parent folder")
+        .addButton((button) => button
+          .setButtonText("Up")
+          .onClick(() => {
+            const parts = this.currentPath.split("/").filter(Boolean);
+            parts.pop();
+            this.currentPath = parts.join("/");
+            void this.render();
+          }));
+    }
+
+    try {
+      const folders = await this.plugin.listRemoteFolders(this.repository, this.branch, this.currentPath);
+      if (folders.length === 0) {
+        this.contentEl.createEl("p", { text: "No subfolders here." });
+        return;
+      }
+
+      for (const folder of folders) {
+        new Setting(this.contentEl)
+          .setName(folder.name)
+          .setDesc(folder.path)
+          .addButton((button) => button
+            .setButtonText("Open")
+            .onClick(() => {
+              this.currentPath = folder.path;
+              void this.render();
+            }));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.contentEl.createEl("p", { text: `Could not load folders: ${message}` });
+    }
+  }
 }
 
 export default class SparkoreKbReader extends Plugin {
@@ -341,7 +440,8 @@ export default class SparkoreKbReader extends Plugin {
 
   private apiPath(repository: string, path: string, branch: string): string {
     const encodedPath = path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
-    return `https://api.github.com/repos/${repository}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
+    const suffix = encodedPath ? `/${encodedPath}` : "";
+    return `https://api.github.com/repos/${repository}/contents${suffix}?ref=${encodeURIComponent(branch)}`;
   }
 
   private async resolveBranch(project: ReaderProject): Promise<string> {
@@ -352,6 +452,59 @@ export default class SparkoreKbReader extends Plugin {
       `https://api.github.com/repos/${project.repository}`,
     );
     return repo.default_branch;
+  }
+
+  async listRepositories(): Promise<string[]> {
+    const token = await this.getToken();
+    if (!token) {
+      throw new Error("Connect GitHub first to browse repositories.");
+    }
+
+    const repositories: string[] = [];
+    for (let page = 1; page <= 20; page += 1) {
+      const items = await this.github<Array<{ full_name: string }>>(
+        `https://api.github.com/user/repos?per_page=100&page=${page}&sort=full_name`,
+        token,
+      );
+      repositories.push(...items.map((item) => item.full_name));
+      if (items.length < 100) break;
+    }
+    return [...new Set(repositories)].sort((a, b) => a.localeCompare(b));
+  }
+
+  async listBranches(repository: string): Promise<string[]> {
+    const normalized = normalizedRepo(repository);
+    if (normalized.split("/").length !== 2) {
+      throw new Error("Choose a repository first.");
+    }
+
+    const branches: string[] = [];
+    for (let page = 1; page <= 20; page += 1) {
+      const items = await this.github<Array<{ name: string }>>(
+        `https://api.github.com/repos/${normalized}/branches?per_page=100&page=${page}`,
+      );
+      branches.push(...items.map((item) => item.name));
+      if (items.length < 100) break;
+    }
+    return branches;
+  }
+
+  async listRemoteFolders(
+    repository: string,
+    branch: string,
+    path: string,
+  ): Promise<Array<{ name: string; path: string }>> {
+    const items = await this.github<GitHubContentItem[]>(
+      this.apiPath(normalizedRepo(repository), path, branch),
+    );
+    return items
+      .filter((item) => item.type === "dir")
+      .map((item) => ({ name: item.name, path: item.path }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  async resolvedBranch(project: ReaderProject): Promise<string> {
+    return await this.resolveBranch({ ...project, repository: normalizedRepo(project.repository) });
   }
 
   private decodeBase64Bytes(content: string): Uint8Array {
@@ -576,7 +729,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
       items: [
         {
           name: "Repository",
-          desc: "GitHub repository in owner/repo format or a GitHub repository URL.",
+          desc: "Choose from repositories available to the connected GitHub App. Manual entry remains available as a fallback.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(project.repository)
@@ -585,11 +738,31 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
                 project.repository = normalizedRepo(value);
                 await this.plugin.saveSettings();
               }));
+            setting.addButton((button) => button
+              .setButtonText("Choose")
+              .onClick(async () => {
+                try {
+                  const repositories = await this.plugin.listRepositories();
+                  if (repositories.length === 0) {
+                    new Notice("Sparkore KB Reader: no accessible repositories found.");
+                    return;
+                  }
+                  new StringPickerModal(this.app, repositories, "Choose a GitHub repository", (repository) => {
+                    project.repository = repository;
+                    project.branch = "";
+                    project.kbRoot = "Knowledge Base";
+                    void this.plugin.saveSettings().then(() => this.update());
+                  }).open();
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+                  new Notice(`Sparkore KB Reader: ${message}`, 10000);
+                }
+              }));
           },
         },
         {
           name: "Branch",
-          desc: "Leave empty to follow the repository default branch.",
+          desc: "Choose a branch from GitHub. Leave empty to follow the repository default branch.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(project.branch)
@@ -598,11 +771,26 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
                 project.branch = value.trim();
                 await this.plugin.saveSettings();
               }));
+            setting.addButton((button) => button
+              .setButtonText("Choose")
+              .onClick(async () => {
+                try {
+                  const branches = await this.plugin.listBranches(project.repository);
+                  const defaultLabel = "(Use repository default branch)";
+                  new StringPickerModal(this.app, [defaultLabel, ...branches], "Choose a branch", (branch) => {
+                    project.branch = branch === defaultLabel ? "" : branch;
+                    void this.plugin.saveSettings().then(() => this.update());
+                  }).open();
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+                  new Notice(`Sparkore KB Reader: ${message}`, 10000);
+                }
+              }));
           },
         },
         {
           name: "KB root",
-          desc: "Repository folder to fetch into the local reading cache.",
+          desc: "Browse GitHub folders or enter a path manually.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(project.kbRoot)
@@ -611,11 +799,32 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
                 project.kbRoot = value.trim();
                 await this.plugin.saveSettings();
               }));
+            setting.addButton((button) => button
+              .setButtonText("Browse")
+              .onClick(async () => {
+                try {
+                  if (!project.repository) throw new Error("Choose a repository first.");
+                  const branch = await this.plugin.resolvedBranch(project);
+                  new RemoteFolderBrowserModal(
+                    this.app,
+                    this.plugin,
+                    normalizedRepo(project.repository),
+                    branch,
+                    (path) => {
+                      project.kbRoot = path;
+                      void this.plugin.saveSettings().then(() => this.update());
+                    },
+                  ).open();
+                } catch (error) {
+                  const message = error instanceof Error ? error.message : String(error);
+                  new Notice(`Sparkore KB Reader: ${message}`, 10000);
+                }
+              }));
           },
         },
         {
           name: "Local folder",
-          desc: "Vault folder for the local cache. Leave empty to use Sparkore KB/<repo>.",
+          desc: "Choose an existing vault folder, use the automatic folder, or enter a path manually.",
           render: (setting: Setting) => {
             setting.addText((text) => text
               .setValue(project.localFolder)
@@ -623,6 +832,20 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
               .onChange(async (value) => {
                 project.localFolder = value.trim();
                 await this.plugin.saveSettings();
+              }));
+            setting.addButton((button) => button
+              .setButtonText("Choose")
+              .onClick(() => {
+                const automatic = "(Automatic: Sparkore KB/<repo>)";
+                const folders = this.app.vault
+                  .getAllFolders(true)
+                  .map((folder) => folder.path)
+                  .filter((path) => path && path !== "/")
+                  .sort((a, b) => a.localeCompare(b));
+                new StringPickerModal(this.app, [automatic, ...folders], "Choose a local vault folder", (folder) => {
+                  project.localFolder = folder === automatic ? "" : folder;
+                  void this.plugin.saveSettings().then(() => this.update());
+                }).open();
               }));
           },
         },
