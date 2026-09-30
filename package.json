@@ -1,6 +1,6 @@
 {
   "name": "sparkore-kb-reader",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Read selected GitHub knowledge base folders in Obsidian with a mobile-friendly local cache.",
   "scripts": {
