@@ -530,19 +530,19 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Sparkore KB Reader" });
+    new Setting(containerEl).setName("Sparkore KB Reader").setHeading();
     containerEl.createEl("p", {
       text: "GitHub is the source. Reader-managed folders are local reading caches and are never pushed back.",
     });
 
-    containerEl.createEl("h3", { text: "GitHub" });
+    new Setting(containerEl).setName("GitHub").setHeading();
 
     if (this.plugin.settings.githubLogin) {
       new Setting(containerEl)
         .setName(`Connected as @${this.plugin.settings.githubLogin}`)
         .setDesc("Authentication uses the Sparkore GitHub App and is stored in Obsidian SecretStorage.")
         .addButton((button) => button
-          .setWarning()
+          .setDestructive()
           .setButtonText("Disconnect")
           .onClick(async () => {
             await this.plugin.disconnectGitHub();
@@ -602,11 +602,11 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    containerEl.createEl("h3", { text: "Projects" });
+    new Setting(containerEl).setName("Projects").setHeading();
 
     this.plugin.settings.projects.forEach((project, index) => {
       const group = containerEl.createDiv({ cls: "sparkore-kb-reader-project" });
-      group.createEl("h4", { text: project.repository || `Project ${index + 1}` });
+      new Setting(group).setName(project.repository || `Project ${index + 1}`).setHeading();
 
       new Setting(group)
         .setName("Repository")
@@ -656,7 +656,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
           .setButtonText("Refresh")
           .onClick(async () => this.plugin.syncProject(project)))
         .addButton((button) => button
-          .setWarning()
+          .setDestructive()
           .setButtonText("Remove project")
           .onClick(async () => {
             await this.plugin.removeProject(index);
@@ -664,7 +664,7 @@ class SparkoreKbReaderSettingTab extends PluginSettingTab {
           }));
     });
 
-    containerEl.createEl("h3", { text: "Add project" });
+    new Setting(containerEl).setName("Add project").setHeading();
 
     let repository = "";
     let branch = "";
