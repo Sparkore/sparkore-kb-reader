@@ -2,7 +2,17 @@
 
 All notable changes to Sparkore KB Reader are documented here.
 
-## 0.1.2 - Unreleased
+## 0.1.3 - Unreleased
+
+### Added
+
+- Repository picker populated from repositories available to the connected GitHub account/app.
+- Branch picker populated from the selected repository.
+- GitHub folder browser for selecting the KB root.
+- Local Obsidian folder picker for selecting the cache destination.
+- Manual text entry remains available as a fallback for advanced/custom paths.
+
+## 0.1.2 - 2026-09-30
 
 ### Fixed
 
