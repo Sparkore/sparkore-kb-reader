@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -43,7 +45,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Validate release version
         shell: bash
@@ -83,12 +85,10 @@ jobs:
             git push origin "$VERSION"
           fi
 
-      - name: Create install archive
-        run: |
-          mkdir -p dist/sparkore-kb-reader
-          cp main.js manifest.json dist/sparkore-kb-reader/
-          cd dist
-          zip -r sparkore-kb-reader.zip sparkore-kb-reader
+      - name: Attest release build
+        uses: actions/attest@v4
+        with:
+          subject-path: main.js
 
       - name: Create GitHub release
         env:
@@ -98,12 +98,11 @@ jobs:
         run: |
           if gh release view "$VERSION" >/dev/null 2>&1; then
             echo "Release $VERSION already exists; uploading/replacing assets."
-            gh release upload "$VERSION" main.js manifest.json dist/sparkore-kb-reader.zip --clobber
+            gh release upload "$VERSION" main.js manifest.json --clobber
           else
             gh release create "$VERSION" \
               main.js \
               manifest.json \
-              dist/sparkore-kb-reader.zip \
               --title "Sparkore KB Reader $VERSION" \
               --generate-notes
           fi
